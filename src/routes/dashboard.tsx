@@ -158,14 +158,32 @@ function DashboardPage() {
         )}
 
         {status === "no-instance" && (
-          <Card>
+          <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Nenhuma instância ativa</CardTitle>
+              <CardTitle>Conectar WhatsApp</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Entre em contato com o suporte para liberar seu acesso.
+            <CardContent className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                Insira o nome da sua instância para conectar direto
               </p>
+              <Input
+                placeholder="ex: minha-instancia"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+              />
+              <Button
+                onClick={() => {
+                  const name = manualName.trim();
+                  if (!name) {
+                    toast.error("Informe o nome da instância");
+                    return;
+                  }
+                  setInstanceName(name);
+                  checkStatus(name);
+                }}
+              >
+                <Plug className="mr-2 h-4 w-4" /> Carregar WhatsApp
+              </Button>
             </CardContent>
           </Card>
         )}
