@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, LogOut, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
+import { Loader2, LogOut, Plug, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/dashboard")({
