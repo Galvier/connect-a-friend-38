@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, LogOut, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
+import { Loader2, LogOut, Plug, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/dashboard")({
@@ -51,6 +52,7 @@ function DashboardPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [manualName, setManualName] = useState("");
 
   const checkStatus = useCallback(async (name: string) => {
     setStatus("loading");
@@ -156,14 +158,32 @@ function DashboardPage() {
         )}
 
         {status === "no-instance" && (
-          <Card>
+          <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Nenhuma instância ativa</CardTitle>
+              <CardTitle>Conectar WhatsApp</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Entre em contato com o suporte para liberar seu acesso.
+            <CardContent className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                Insira o nome da sua instância para conectar direto
               </p>
+              <Input
+                placeholder="ex: minha-instancia"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+              />
+              <Button
+                onClick={() => {
+                  const name = manualName.trim();
+                  if (!name) {
+                    toast.error("Informe o nome da instância");
+                    return;
+                  }
+                  setInstanceName(name);
+                  checkStatus(name);
+                }}
+              >
+                <Plug className="mr-2 h-4 w-4" /> Carregar WhatsApp
+              </Button>
             </CardContent>
           </Card>
         )}
