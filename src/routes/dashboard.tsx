@@ -52,6 +52,7 @@ function DashboardPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [manualName, setManualName] = useState("");
 
   const checkStatus = useCallback(async (name: string) => {
     setStatus("loading");
