@@ -52,15 +52,15 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "status":
-        url = `${base}/instance/status?instanceName=${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/connectionState/${encodeURIComponent(instanceName)}`;
         method = "GET";
         break;
       case "qr":
-        url = `${base}/instance/qr?instanceName=${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/connect/${encodeURIComponent(instanceName)}`;
         method = "GET";
         break;
       case "logout":
-        url = `${base}/instance/logout?instanceName=${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/logout/${encodeURIComponent(instanceName)}`;
         method = "DELETE";
         break;
       default:
