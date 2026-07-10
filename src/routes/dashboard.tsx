@@ -30,30 +30,47 @@ function isLikelyBase64(v: string) {
   return /^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100;
 }
 
-function scanForQr(value: unknown, seen = new WeakSet<object>()): string | null {
-  if (!value) return null;
-  if (typeof value === "string") {
-    if (value.startsWith("data:image")) return value;
-    if (isLikelyBase64(value)) return `data:image/png;base64,${value}`;
-    return null;
-  }
-  if (typeof value === "object") {
-    if (seen.has(value as object)) return null;
-    seen.add(value as object);
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      const found = scanForQr(v, seen);
-      if (found) return found;
-    }
-  }
+function toQrDataUrl(value: string): string | null {
+  const s = value.trim();
+  if (!s) return null;
+  if (s.startsWith("data:image")) return s;
+  if (isLikelyBase64(s)) return `data:image/png;base64,${s}`;
   return null;
 }
 
-function extractQr(data: unknown): string | null {
-  const found = scanForQr(data);
-  if (!found && data && typeof data === "object") {
-    console.log("Valores vasculhados:", Object.values(data as Record<string, unknown>));
+function extractQr(payload: unknown): string | null {
+  // Edge function envelopa em payload.data.data
+  const outer = (payload as { data?: unknown })?.data;
+  const respostaReal =
+    (outer as { data?: unknown })?.data !== undefined
+      ? (outer as { data: unknown }).data
+      : outer;
+
+  console.log("CONTEUDO REAL DA EVOLUTION:", respostaReal);
+
+  if (typeof respostaReal === "string") {
+    return toQrDataUrl(respostaReal);
   }
-  return found;
+
+  if (respostaReal && typeof respostaReal === "object") {
+    const valores = Object.values(respostaReal as Record<string, unknown>);
+    console.log("Valores vasculhados:", valores);
+    for (const v of valores) {
+      if (typeof v === "string") {
+        const found = toQrDataUrl(v);
+        if (found) return found;
+      }
+    }
+    // Fallback: procura recursivamente em objetos aninhados
+    for (const v of valores) {
+      if (v && typeof v === "object") {
+        const nested = extractQr({ data: { data: v } });
+        if (nested) return nested;
+      }
+    }
+  }
+
+  return null;
 }
 
 function extractState(data: unknown): "open" | "close" | "connecting" | "unknown" {
