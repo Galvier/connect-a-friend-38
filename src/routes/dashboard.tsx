@@ -1,7 +1,19 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, LogOut, Plug, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
+import {
+  ArrowLeft,
+  Home,
+  Loader2,
+  LogOut,
+  Plug,
+  Power,
+  QrCode,
+  RefreshCw,
+  Smartphone,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,22 +26,34 @@ export const Route = createFileRoute("/dashboard")({
 
 type Status = "loading" | "connected" | "disconnected" | "qr" | "no-instance";
 
+function isLikelyBase64(v: string) {
+  return /^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100;
+}
+
+function scanForQr(value: unknown, seen = new WeakSet<object>()): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (value.startsWith("data:image")) return value;
+    if (isLikelyBase64(value)) return `data:image/png;base64,${value}`;
+    return null;
+  }
+  if (typeof value === "object") {
+    if (seen.has(value as object)) return null;
+    seen.add(value as object);
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      const found = scanForQr(v, seen);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function extractQr(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const d = data as Record<string, unknown>;
-  const candidates = [
-    d.base64,
-    d.qrcode,
-    d.qr,
-    (d.qrcode as Record<string, unknown>)?.base64,
-    (d.qrcode as Record<string, unknown>)?.code,
-    (d.instance as Record<string, unknown>)?.qrcode,
-  ].filter(Boolean) as string[];
-  const c = candidates[0];
-  if (!c) return null;
-  if (c.startsWith("data:image")) return c;
-  if (/^[A-Za-z0-9+/=]+$/.test(c) && c.length > 100) return `data:image/png;base64,${c}`;
-  return c;
+  const found = scanForQr(data);
+  if (!found && data && typeof data === "object") {
+    console.log("Valores vasculhados:", Object.values(data as Record<string, unknown>));
+  }
+  return found;
 }
 
 function extractState(data: unknown): "open" | "close" | "connecting" | "unknown" {
@@ -132,6 +156,30 @@ function DashboardPage() {
     navigate({ to: "/auth", replace: true });
   };
 
+  const goHome = () => {
+    setQrImage(null);
+    setManualName("");
+    setInstanceName(null);
+    setStatus("no-instance");
+  };
+
+  const goBack = () => {
+    if (status === "qr") {
+      setQrImage(null);
+      setStatus(instanceName ? "disconnected" : "no-instance");
+      return;
+    }
+    if (status === "disconnected" || status === "connected") {
+      setQrImage(null);
+      setInstanceName(null);
+      setStatus("no-instance");
+      return;
+    }
+    goHome();
+  };
+
+  const currentStep: 1 | 2 = status === "no-instance" || status === "loading" ? 1 : 2;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <header className="flex h-16 items-center justify-between border-b bg-card/60 px-6 backdrop-blur">
@@ -148,6 +196,44 @@ function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-12">
+        <div className="mb-4 flex items-center justify-between rounded-lg border bg-card/60 px-3 py-2 backdrop-blur">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={goBack} disabled={status === "loading"}>
+              <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
+            </Button>
+            <Button variant="ghost" size="sm" onClick={goHome}>
+              <Home className="mr-1 h-4 w-4" /> Home
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors ${
+                currentStep === 1
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-background/30 text-[10px]">
+                1
+              </span>
+              Identificar Instância
+            </span>
+            <span className="text-muted-foreground">→</span>
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors ${
+                currentStep === 2
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-background/30 text-[10px]">
+                2
+              </span>
+              Sincronizar Aparelho
+            </span>
+          </div>
+        </div>
+
         {status === "loading" && (
           <Card>
             <CardContent className="flex flex-col items-center justify-center gap-3 py-16">
