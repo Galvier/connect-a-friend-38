@@ -1,7 +1,19 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, LogOut, Plug, Power, QrCode, RefreshCw, Smartphone, Wifi, WifiOff } from "lucide-react";
+import {
+  ArrowLeft,
+  Home,
+  Loader2,
+  LogOut,
+  Plug,
+  Power,
+  QrCode,
+  RefreshCw,
+  Smartphone,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,22 +26,34 @@ export const Route = createFileRoute("/dashboard")({
 
 type Status = "loading" | "connected" | "disconnected" | "qr" | "no-instance";
 
+function isLikelyBase64(v: string) {
+  return /^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100;
+}
+
+function scanForQr(value: unknown, seen = new WeakSet<object>()): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (value.startsWith("data:image")) return value;
+    if (isLikelyBase64(value)) return `data:image/png;base64,${value}`;
+    return null;
+  }
+  if (typeof value === "object") {
+    if (seen.has(value as object)) return null;
+    seen.add(value as object);
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      const found = scanForQr(v, seen);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function extractQr(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const d = data as Record<string, unknown>;
-  const candidates = [
-    d.base64,
-    d.qrcode,
-    d.qr,
-    (d.qrcode as Record<string, unknown>)?.base64,
-    (d.qrcode as Record<string, unknown>)?.code,
-    (d.instance as Record<string, unknown>)?.qrcode,
-  ].filter(Boolean) as string[];
-  const c = candidates[0];
-  if (!c) return null;
-  if (c.startsWith("data:image")) return c;
-  if (/^[A-Za-z0-9+/=]+$/.test(c) && c.length > 100) return `data:image/png;base64,${c}`;
-  return c;
+  const found = scanForQr(data);
+  if (!found && data && typeof data === "object") {
+    console.log("Valores vasculhados:", Object.values(data as Record<string, unknown>));
+  }
+  return found;
 }
 
 function extractState(data: unknown): "open" | "close" | "connecting" | "unknown" {
