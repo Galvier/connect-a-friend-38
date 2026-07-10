@@ -105,6 +105,16 @@ function DashboardPage() {
       setStatus("disconnected");
       return;
     }
+    if (data?.ok === false) {
+      const msg = (data?.data as { error?: string })?.error ?? "Falha na Evolution API";
+      if (data?.status === 401 || /not authorized/i.test(msg)) {
+        toast.error("Credenciais da Evolution API inválidas. Verifique EVOLUTION_API_KEY.");
+      } else {
+        toast.error(`Evolution API: ${msg}`);
+      }
+      setStatus("disconnected");
+      return;
+    }
     const state = extractState(data?.data);
     setStatus(state === "open" ? "connected" : "disconnected");
   }, []);
