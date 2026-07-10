@@ -148,7 +148,7 @@ function DashboardPage() {
       setStatus("disconnected");
       return;
     }
-    const img = extractQr(data?.data);
+    const img = extractQr(data);
     if (!img) {
       toast.error("QR Code não retornado pela API");
       return;
