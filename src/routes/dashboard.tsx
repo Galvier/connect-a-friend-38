@@ -76,6 +76,13 @@ function extractQr(payload: unknown): string | null {
 function extractState(data: unknown): "open" | "close" | "connecting" | "unknown" {
   if (!data || typeof data !== "object") return "unknown";
   const d = data as Record<string, unknown>;
+  const inner = (d.data as Record<string, unknown> | undefined) ?? d;
+  // Evolution Go shape: { Connected: boolean, LoggedIn: boolean, Name: string }
+  if (typeof inner.Connected === "boolean" || typeof inner.LoggedIn === "boolean") {
+    if (inner.LoggedIn === true) return "open";
+    if (inner.Connected === true) return "connecting";
+    return "close";
+  }
   const state =
     (d.state as string) ??
     ((d.instance as Record<string, unknown>)?.state as string) ??
