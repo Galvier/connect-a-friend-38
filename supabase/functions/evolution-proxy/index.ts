@@ -30,7 +30,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const base = EVOLUTION_API_URL.replace(/\/$/, "");
+    // Sanitize: extract URL from markdown format [url](url) if present, trim, strip trailing slash
+    const urlMatch = EVOLUTION_API_URL.match(/https?:\/\/[^\s\)\]]+/);
+    const base = (urlMatch ? urlMatch[0] : EVOLUTION_API_URL).trim().replace(/\/$/, "");
     const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
 
     let url = "";
