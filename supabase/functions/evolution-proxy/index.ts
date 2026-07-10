@@ -6,6 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const normalizeBaseUrl = (rawUrl: string) => {
+  const trimmed = rawUrl.trim();
+  const markdownTarget = trimmed.match(/\]\((https?:\/\/[^\)\s]+)\)/)?.[1];
+  const bracketTarget = trimmed.match(/\[(https?:\/\/[^\]\s]+)\]/)?.[1];
+  const firstPlainUrl = trimmed.match(/https?:\/\/[^\s\)\]]+/)?.[0];
+  const candidate = (markdownTarget ?? bracketTarget ?? firstPlainUrl ?? trimmed)
+    .trim()
+    .replace(/^[`'"<]+|[`'">]+$/g, "")
+    .replace(/\/+$/, "");
+
+  return new URL(candidate).origin;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -30,9 +43,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Sanitize: extract URL from markdown format [url](url) if present, trim, strip trailing slash
-    const urlMatch = EVOLUTION_API_URL.match(/https?:\/\/[^\s\)\]]+/);
-    const base = (urlMatch ? urlMatch[0] : EVOLUTION_API_URL).trim().replace(/\/$/, "");
+    // Sanitize malformed secrets like [https://domain](https://domain) into a valid origin.
+    const base = normalizeBaseUrl(EVOLUTION_API_URL);
     const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
 
     let url = "";
