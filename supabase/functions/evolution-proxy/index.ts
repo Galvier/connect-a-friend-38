@@ -15,27 +15,22 @@ const normalizeBaseUrl = (rawUrl: string) => {
     .trim()
     .replace(/^[`'"<]+|[`'">]+$/g, "")
     .replace(/\/+$/, "");
-
   return new URL(candidate).origin;
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
     const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
-    const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY");
-
-    if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "Evolution API não configurada. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+    const EVOLUTION_API_KEY_FALLBACK = Deno.env.get("EVOLUTION_API_KEY");
+    if (!EVOLUTION_API_URL) {
+      return new Response(JSON.stringify({ error: "EVOLUTION_API_URL não configurada." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const { action, instanceName } = await req.json();
+    const { action, instanceName, apiToken } = await req.json();
     if (!action || !instanceName) {
       return new Response(JSON.stringify({ error: "action e instanceName obrigatórios" }), {
         status: 400,
@@ -43,21 +38,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Sanitize malformed secrets like [https://domain](https://domain) into a valid origin.
+    const token = (apiToken as string | undefined)?.trim() || EVOLUTION_API_KEY_FALLBACK;
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Token da instância ausente." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const base = normalizeBaseUrl(EVOLUTION_API_URL);
-    const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
+    const headers = { "Content-Type": "application/json", apikey: token };
 
     let url = "";
     let method: "GET" | "POST" | "DELETE" = "GET";
-
     switch (action) {
       case "status":
         url = `${base}/instance/connectionState/${encodeURIComponent(instanceName)}`;
-        method = "GET";
         break;
       case "qr":
         url = `${base}/instance/connect/${encodeURIComponent(instanceName)}`;
-        method = "GET";
         break;
       case "logout":
         url = `${base}/instance/logout/${encodeURIComponent(instanceName)}`;
@@ -73,13 +72,21 @@ Deno.serve(async (req) => {
     const resp = await fetch(url, { method, headers });
     const text = await resp.text();
     let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { raw: text };
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+    // Try to extract phone number for status
+    let connectedNumber: string | null = null;
+    if (action === "status" && data && typeof data === "object") {
+      const d = data as Record<string, unknown>;
+      const inner = (d.data as Record<string, unknown> | undefined) ?? d;
+      const name = (inner.Name ?? inner.name ?? inner.ownerJid ?? inner.wuid) as string | undefined;
+      if (typeof name === "string") {
+        const digits = name.split("@")[0].replace(/\D/g, "");
+        if (digits.length >= 8) connectedNumber = digits;
+      }
     }
 
-    return new Response(JSON.stringify({ ok: resp.ok, status: resp.status, data }), {
+    return new Response(JSON.stringify({ ok: resp.ok, status: resp.status, data, connectedNumber }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

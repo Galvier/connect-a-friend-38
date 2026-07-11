@@ -19,39 +19,54 @@ export type Database = {
           created_at: string
           email: string
           id: string
+          must_change_password: boolean
+          name: string | null
           role: Database["public"]["Enums"]["app_role"]
         }
         Insert: {
           created_at?: string
           email: string
           id: string
+          must_change_password?: boolean
+          name?: string | null
           role?: Database["public"]["Enums"]["app_role"]
         }
         Update: {
           created_at?: string
           email?: string
           id?: string
+          must_change_password?: boolean
+          name?: string | null
           role?: Database["public"]["Enums"]["app_role"]
         }
         Relationships: []
       }
       whatsapp_instances: {
         Row: {
+          api_token: string | null
+          connected_number: string | null
           created_at: string
           id: string
           instance_name: string
+          updated_at: string
           user_id: string
         }
         Insert: {
+          api_token?: string | null
+          connected_number?: string | null
           created_at?: string
           id?: string
           instance_name: string
+          updated_at?: string
           user_id: string
         }
         Update: {
+          api_token?: string | null
+          connected_number?: string | null
           created_at?: string
           id?: string
           instance_name?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
