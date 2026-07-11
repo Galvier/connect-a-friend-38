@@ -1,228 +1,115 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Home,
-  Loader2,
-  LogOut,
-  Plug,
-  Power,
-  QrCode,
-  RefreshCw,
-  Smartphone,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
+import { Loader2, LogOut, Power, QrCode, Smartphone, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ConnectQrDialog } from "@/components/ConnectQrDialog";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
 });
 
-type Status = "loading" | "connected" | "disconnected" | "qr" | "no-instance";
+type Instance = {
+  id: string;
+  instance_name: string;
+  api_token: string;
+  connected_number: string | null;
+};
+type InstanceStatus = "loading" | "connected" | "disconnected";
 
-function isLikelyBase64(v: string) {
-  return /^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100;
-}
-
-function toQrDataUrl(value: string): string | null {
-  const s = value.trim();
-  if (!s) return null;
-  if (s.startsWith("data:image")) return s;
-  if (isLikelyBase64(s)) return `data:image/png;base64,${s}`;
-  return null;
-}
-
-function extractQr(payload: unknown): string | null {
-  // Edge function envelopa em payload.data.data
-  const outer = (payload as { data?: unknown })?.data;
-  const respostaReal =
-    (outer as { data?: unknown })?.data !== undefined
-      ? (outer as { data: unknown }).data
-      : outer;
-
-  console.log("CONTEUDO REAL DA EVOLUTION:", respostaReal);
-
-  if (typeof respostaReal === "string") {
-    return toQrDataUrl(respostaReal);
-  }
-
-  if (respostaReal && typeof respostaReal === "object") {
-    const valores = Object.values(respostaReal as Record<string, unknown>);
-    console.log("Valores vasculhados:", valores);
-    for (const v of valores) {
-      if (typeof v === "string") {
-        const found = toQrDataUrl(v);
-        if (found) return found;
-      }
-    }
-    // Fallback: procura recursivamente em objetos aninhados
-    for (const v of valores) {
-      if (v && typeof v === "object") {
-        const nested = extractQr({ data: { data: v } });
-        if (nested) return nested;
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractState(data: unknown): "open" | "close" | "connecting" | "unknown" {
+function extractState(data: unknown): "open" | "close" | "unknown" {
   if (!data || typeof data !== "object") return "unknown";
   const d = data as Record<string, unknown>;
   const inner = (d.data as Record<string, unknown> | undefined) ?? d;
-  // Evolution Go shape: { Connected: boolean, LoggedIn: boolean, Name: string }
-  if (typeof inner.Connected === "boolean" || typeof inner.LoggedIn === "boolean") {
-    if (inner.LoggedIn === true) return "open";
-    if (inner.Connected === true) return "connecting";
-    return "close";
-  }
-  const state =
-    (d.state as string) ??
-    ((d.instance as Record<string, unknown>)?.state as string) ??
-    ((d.instance as Record<string, unknown>)?.status as string);
+  if (typeof inner.LoggedIn === "boolean") return inner.LoggedIn ? "open" : "close";
+  if (typeof inner.Connected === "boolean" && inner.Connected) return "open";
+  const state = (inner.state as string) ?? (d.state as string);
   if (state === "open" || state === "connected") return "open";
-  if (state === "close" || state === "disconnected") return "close";
-  if (state === "connecting") return "connecting";
-  return "unknown";
+  return "close";
 }
 
 function DashboardPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
-  const [instanceName, setInstanceName] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("loading");
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [manualName, setManualName] = useState("");
+  const [instances, setInstances] = useState<Instance[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, InstanceStatus>>({});
+  const [loading, setLoading] = useState(true);
+  const [qrFor, setQrFor] = useState<Instance | null>(null);
 
-  const checkStatus = useCallback(async (name: string) => {
-    setStatus("loading");
+  const checkStatus = useCallback(async (inst: Instance) => {
+    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
     const { data, error } = await supabase.functions.invoke("evolution-proxy", {
-      body: { action: "status", instanceName: name },
+      body: { action: "status", instanceName: inst.instance_name, apiToken: inst.api_token },
     });
-    if (error) {
-      toast.error("Erro ao verificar status");
-      setStatus("disconnected");
-      return;
-    }
-    if (data?.ok === false) {
-      const msg = (data?.data as { error?: string })?.error ?? "Falha na Evolution API";
-      if (data?.status === 401 || /not authorized/i.test(msg)) {
-        toast.error("Credenciais da Evolution API inválidas. Verifique EVOLUTION_API_KEY.");
-      } else {
-        toast.error(`Evolution API: ${msg}`);
-      }
-      setStatus("disconnected");
+    if (error || data?.ok === false) {
+      setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
       return;
     }
     const state = extractState(data?.data);
-    setStatus(state === "open" ? "connected" : "disconnected");
+    const connected = state === "open";
+    setStatuses((s) => ({ ...s, [inst.id]: connected ? "connected" : "disconnected" }));
+    const number = (data?.connectedNumber as string | null) ?? null;
+    if (connected && number && number !== inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
+    }
   }, []);
 
   const load = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      navigate({ to: "/auth", replace: true });
-      return;
-    }
+    if (!userData.user) return navigate({ to: "/auth", replace: true });
     setEmail(userData.user.email ?? null);
+    const { data: prof } = await supabase
+      .from("profiles").select("role, must_change_password").eq("id", userData.user.id).maybeSingle();
+    if (prof?.must_change_password) return navigate({ to: "/change-password", replace: true });
+    if (prof?.role === "admin") return navigate({ to: "/admin", replace: true });
+
     const { data: insts } = await supabase
       .from("whatsapp_instances")
-      .select("instance_name")
+      .select("id, instance_name, api_token, connected_number")
       .eq("user_id", userData.user.id)
-      .limit(1);
-    const name = insts?.[0]?.instance_name;
-    if (!name) {
-      setStatus("no-instance");
-      return;
-    }
-    setInstanceName(name);
-    checkStatus(name);
+      .order("created_at", { ascending: true });
+    const list = (insts ?? []) as Instance[];
+    setInstances(list);
+    setLoading(false);
+    list.forEach(checkStatus);
   }, [navigate, checkStatus]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  const generateQr = async () => {
-    if (!instanceName) return;
-    setActionLoading(true);
-    setStatus("qr");
-    setQrImage(null);
-    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
-      body: { action: "qr", instanceName },
-    });
-    setActionLoading(false);
-    if (error) {
-      toast.error("Erro ao gerar QR Code");
-      setStatus("disconnected");
-      return;
-    }
-    if (data?.ok === false) {
-      const msg = (data?.data as { error?: string })?.error ?? "Falha na Evolution API";
-      if (data?.status === 401 || /not authorized/i.test(msg)) {
-        toast.error("Credenciais da Evolution API inválidas. Verifique EVOLUTION_API_KEY.");
-      } else {
-        toast.error(`Evolution API: ${msg}`);
-      }
-      setStatus("disconnected");
-      return;
-    }
-    const img = extractQr(data);
-    if (!img) {
-      toast.error("QR Code não retornado pela API");
-      return;
-    }
-    setQrImage(img);
-  };
-
-  const logout = async () => {
-    if (!instanceName) return;
-    setActionLoading(true);
+  const disconnect = async (inst: Instance) => {
     const { error } = await supabase.functions.invoke("evolution-proxy", {
-      body: { action: "logout", instanceName },
+      body: { action: "logout", instanceName: inst.instance_name, apiToken: inst.api_token },
     });
-    setActionLoading(false);
     if (error) return toast.error("Erro ao desconectar");
+    await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
+    setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
     toast.success("Dispositivo desconectado");
-    checkStatus(instanceName);
+    checkStatus(inst);
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  };
-
-  const goHome = () => {
-    setQrImage(null);
-    setManualName("");
-    setInstanceName(null);
-    setStatus("no-instance");
-  };
-
-  const goBack = () => {
-    if (status === "qr") {
-      setQrImage(null);
-      setStatus(instanceName ? "disconnected" : "no-instance");
-      return;
+  const onConnected = (inst: Instance) => async (number: string | null) => {
+    if (number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
     }
-    if (status === "disconnected" || status === "connected") {
-      setQrImage(null);
-      setInstanceName(null);
-      setStatus("no-instance");
-      return;
-    }
-    goHome();
+    toast.success("WhatsApp conectado!");
+    checkStatus(inst);
   };
 
-  const currentStep: 1 | 2 = status === "no-instance" || status === "loading" ? 1 : 2;
+  const signOut = async () => { await supabase.auth.signOut(); navigate({ to: "/auth", replace: true }); };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -239,161 +126,66 @@ function DashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <div className="mb-4 flex items-center justify-between rounded-lg border bg-card/60 px-3 py-2 backdrop-blur">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={goBack} disabled={status === "loading"}>
-              <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
-            </Button>
-            <Button variant="ghost" size="sm" onClick={goHome}>
-              <Home className="mr-1 h-4 w-4" /> Home
-            </Button>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors ${
-                currentStep === 1
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-background/30 text-[10px]">
-                1
-              </span>
-              Identificar Instância
-            </span>
-            <span className="text-muted-foreground">→</span>
-            <span
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors ${
-                currentStep === 2
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-background/30 text-[10px]">
-                2
-              </span>
-              Sincronizar Aparelho
-            </span>
-          </div>
-        </div>
+      <main className="mx-auto max-w-5xl px-4 py-10">
+        <h1 className="mb-6 text-2xl font-bold">Minhas Instâncias</h1>
 
-        {status === "loading" && (
+        {instances.length === 0 ? (
           <Card>
-            <CardContent className="flex flex-col items-center justify-center gap-3 py-16">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Verificando conexão...</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {status === "no-instance" && (
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle>Conectar WhatsApp</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                Insira o nome da sua instância para conectar direto
+            <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+              <Smartphone className="h-10 w-10 text-muted-foreground" />
+              <p className="text-muted-foreground">
+                Nenhuma instância atribuída. Entre em contato com o administrador.
               </p>
-              <Input
-                placeholder="ex: minha-instancia"
-                value={manualName}
-                onChange={(e) => setManualName(e.target.value)}
-              />
-              <Button
-                onClick={() => {
-                  const name = manualName.trim();
-                  if (!name) {
-                    toast.error("Informe o nome da instância");
-                    return;
-                  }
-                  setInstanceName(name);
-                  checkStatus(name);
-                }}
-              >
-                <Plug className="mr-2 h-4 w-4" /> Carregar WhatsApp
-              </Button>
             </CardContent>
           </Card>
-        )}
-
-        {status === "connected" && (
-          <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-transparent shadow-lg">
-            <CardContent className="flex flex-col items-center gap-6 py-12">
-              <div className="relative">
-                <div className="absolute inset-0 animate-ping rounded-full bg-green-500/40" />
-                <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-green-500">
-                  <Wifi className="h-10 w-10 text-white" />
-                </div>
-              </div>
-              <div className="text-center">
-                <h2 className="text-2xl font-bold">WhatsApp Conectado com Sucesso!</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Instância: <span className="font-mono">{instanceName}</span>
-                </p>
-              </div>
-              <Button variant="destructive" onClick={logout} disabled={actionLoading}>
-                {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
-                Desconectar Dispositivo
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {status === "disconnected" && (
-          <Card className="border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-transparent shadow-lg">
-            <CardContent className="flex flex-col items-center gap-6 py-12">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-yellow-500">
-                <WifiOff className="h-10 w-10 text-white" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-2xl font-bold">Aparelho Desconectado</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Gere um QR Code para conectar seu WhatsApp.
-                </p>
-              </div>
-              <Button size="lg" onClick={generateQr} disabled={actionLoading}>
-                {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
-                Gerar QR Code
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {status === "qr" && (
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-center">Escaneie o QR Code</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center gap-6 pb-8">
-              {qrImage ? (
-                qrImage.startsWith("data:image") ? (
-                  <img src={qrImage} alt="QR Code" className="h-64 w-64 rounded-lg border bg-white p-2" />
-                ) : (
-                  <div className="rounded-lg border bg-white p-4 text-xs break-all">{qrImage}</div>
-                )
-              ) : (
-                <div className="flex h-64 w-64 items-center justify-center rounded-lg border bg-muted">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              )}
-              <p className="text-center text-sm text-muted-foreground">
-                Abra o WhatsApp &gt; Aparelhos conectados &gt; Conectar aparelho
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={generateQr} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                  Atualizar QR Code
-                </Button>
-                <Button variant="ghost" onClick={() => instanceName && checkStatus(instanceName)}>
-                  Já conectei
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {instances.map((inst) => {
+              const status = statuses[inst.id] ?? "loading";
+              return (
+                <Card key={inst.id} className="shadow-md">
+                  <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                    <CardTitle className="text-base">{inst.instance_name}</CardTitle>
+                    {status === "loading" ? (
+                      <Badge variant="secondary"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
+                    ) : status === "connected" ? (
+                      <Badge className="bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
+                    ) : (
+                      <Badge variant="secondary"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {status === "connected" && inst.connected_number && (
+                      <p className="text-sm text-muted-foreground">
+                        Número: <span className="font-mono text-foreground">+{inst.connected_number}</span>
+                      </p>
+                    )}
+                    {status === "connected" ? (
+                      <Button variant="destructive" className="w-full" onClick={() => disconnect(inst)}>
+                        <Power className="mr-2 h-4 w-4" /> Desconectar
+                      </Button>
+                    ) : (
+                      <Button className="w-full" onClick={() => setQrFor(inst)} disabled={status === "loading"}>
+                        <QrCode className="mr-2 h-4 w-4" /> Conectar
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </main>
+
+      {qrFor && (
+        <ConnectQrDialog
+          open={!!qrFor}
+          onOpenChange={(o) => !o && setQrFor(null)}
+          instanceName={qrFor.instance_name}
+          apiToken={qrFor.api_token}
+          onConnected={onConnected(qrFor)}
+        />
+      )}
     </div>
   );
 }
