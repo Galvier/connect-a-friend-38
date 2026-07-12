@@ -51,12 +51,30 @@ function AdminPage() {
   const [instSaving, setInstSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return navigate({ to: "/auth", replace: true });
-    const { data: me } = await supabase
-      .from("profiles").select("role, email, must_change_password").eq("id", userData.user.id).maybeSingle();
-    if (me?.must_change_password) return navigate({ to: "/change-password", replace: true });
-    if (me?.role !== "admin") { toast.error("Acesso negado"); return navigate({ to: "/dashboard", replace: true }); }
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) return navigate({ to: "/auth", replace: true });
+
+    const { data: me, error: meErr } = await supabase
+      .from("profiles")
+      .select("role, email, must_change_password")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+
+    if (meErr) {
+      console.error("[admin] profile fetch error", meErr);
+      toast.error(`Erro ao carregar perfil: ${meErr.message}`);
+      return navigate({ to: "/auth", replace: true });
+    }
+    if (!me) {
+      console.error("[admin] profile not found for", userData.user.id);
+      toast.error("Perfil não encontrado. Contate o administrador.");
+      return navigate({ to: "/auth", replace: true });
+    }
+    if (me.must_change_password) return navigate({ to: "/change-password", replace: true });
+    if (me.role !== "admin") {
+      toast.error(`Acesso negado (role atual: ${me.role})`);
+      return navigate({ to: "/dashboard", replace: true });
+    }
     setAdminEmail(me.email);
     const [{ data: profs }, { data: insts }] = await Promise.all([
       supabase.from("profiles").select("id, email, name, role, created_at").order("created_at", { ascending: false }),

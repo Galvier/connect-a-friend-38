@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, LogOut, Power, QrCode, Smartphone, Wifi, WifiOff } from "lucide-react";
+import { Loader2, LogOut, Power, QrCode, ShieldCheck, Smartphone, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ function extractState(data: unknown): "open" | "close" | "unknown" {
 function DashboardPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [statuses, setStatuses] = useState<Record<string, InstanceStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -63,10 +64,11 @@ function DashboardPage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return navigate({ to: "/auth", replace: true });
     setEmail(userData.user.email ?? null);
-    const { data: prof } = await supabase
+    const { data: prof, error: profErr } = await supabase
       .from("profiles").select("role, must_change_password").eq("id", userData.user.id).maybeSingle();
+    if (profErr) console.error("[dashboard] profile fetch error", profErr);
     if (prof?.must_change_password) return navigate({ to: "/change-password", replace: true });
-    if (prof?.role === "admin") return navigate({ to: "/admin", replace: true });
+    if (prof?.role === "admin") setIsAdmin(true);
 
     const { data: insts } = await supabase
       .from("whatsapp_instances")
@@ -120,6 +122,11 @@ function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{email}</span>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => navigate({ to: "/admin" })}>
+              <ShieldCheck className="mr-2 h-4 w-4" /> Painel Admin
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" /> Sair
           </Button>
