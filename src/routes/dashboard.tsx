@@ -68,7 +68,7 @@ function DashboardPage() {
       .from("profiles").select("role, must_change_password").eq("id", userData.user.id).maybeSingle();
     if (profErr) console.error("[dashboard] profile fetch error", profErr);
     if (prof?.must_change_password) return navigate({ to: "/change-password", replace: true });
-    if (prof?.role === "admin") setIsAdmin(true);
+    if (prof?.role === "admin") { setIsAdmin(true); return navigate({ to: "/admin", replace: true }); }
 
     const { data: insts } = await supabase
       .from("whatsapp_instances")
