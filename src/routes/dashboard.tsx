@@ -35,6 +35,7 @@ function extractState(data: unknown): "open" | "close" | "unknown" {
 function DashboardPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [statuses, setStatuses] = useState<Record<string, InstanceStatus>>({});
   const [loading, setLoading] = useState(true);
