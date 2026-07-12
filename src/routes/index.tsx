@@ -19,9 +19,13 @@ function Index() {
       }
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, must_change_password")
         .eq("id", data.user.id)
         .maybeSingle();
+      if (profile?.must_change_password) {
+        navigate({ to: "/change-password", replace: true });
+        return;
+      }
       navigate({ to: profile?.role === "admin" ? "/admin" : "/dashboard", replace: true });
     })();
   }, [navigate]);
