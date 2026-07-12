@@ -122,6 +122,11 @@ function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{email}</span>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => navigate({ to: "/admin" })}>
+              <ShieldCheck className="mr-2 h-4 w-4" /> Painel Admin
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" /> Sair
           </Button>
