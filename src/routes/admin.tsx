@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Copy, Loader2, LogOut, Plus, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Copy, Loader2, LogOut, Plus, ShieldCheck, Trash2, UserPlus, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -15,13 +15,15 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { extractState } from "@/lib/evolution";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
 type Profile = { id: string; email: string; name: string | null; role: string; created_at: string };
-type Instance = { id: string; user_id: string; instance_name: string; api_token: string };
+type Instance = { id: string; user_id: string; instance_name: string; api_token: string; connected_number: string | null };
+type InstanceStatus = "loading" | "connected" | "disconnected";
 
 function mask(t: string) {
   if (!t) return "—";
@@ -35,6 +37,7 @@ function AdminPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statuses, setStatuses] = useState<Record<string, InstanceStatus>>({});
 
   // client dialog
   const [clientOpen, setClientOpen] = useState(false);
@@ -49,6 +52,27 @@ function AdminPage() {
   const [instName, setInstName] = useState("");
   const [instToken, setInstToken] = useState("");
   const [instSaving, setInstSaving] = useState(false);
+
+  const checkStatus = useCallback(async (inst: Instance) => {
+    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
+    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+      body: { action: "status", instanceName: inst.instance_name, apiToken: inst.api_token },
+    });
+    if (error || data?.ok === false) {
+      setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
+      return;
+    }
+    const connected = extractState(data?.data) === "open";
+    setStatuses((s) => ({ ...s, [inst.id]: connected ? "connected" : "disconnected" }));
+    const number = (data?.connectedNumber as string | null) ?? null;
+    if (connected && number && number !== inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
+    } else if (!connected && inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -78,12 +102,14 @@ function AdminPage() {
     setAdminEmail(me.email);
     const [{ data: profs }, { data: insts }] = await Promise.all([
       supabase.from("profiles").select("id, email, name, role, created_at").order("created_at", { ascending: false }),
-      supabase.from("whatsapp_instances").select("id, user_id, instance_name, api_token"),
+      supabase.from("whatsapp_instances").select("id, user_id, instance_name, api_token, connected_number"),
     ]);
     setProfiles((profs ?? []) as Profile[]);
-    setInstances((insts ?? []) as Instance[]);
+    const list = (insts ?? []) as Instance[];
+    setInstances(list);
     setLoading(false);
-  }, [navigate]);
+    list.forEach(checkStatus);
+  }, [navigate, checkStatus]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -204,23 +230,40 @@ function AdminPage() {
                     <TableRow>
                       <TableHead>Nome</TableHead>
                       <TableHead>Cliente</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Número</TableHead>
                       <TableHead>Token</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {instances.map((i) => (
-                      <TableRow key={i.id}>
-                        <TableCell className="font-medium">{i.instance_name}</TableCell>
-                        <TableCell>{emailById(i.user_id)}</TableCell>
-                        <TableCell className="font-mono text-xs">{mask(i.api_token)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant="ghost" onClick={() => deleteInstance(i.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {instances.map((i) => {
+                      const st = statuses[i.id] ?? "loading";
+                      return (
+                        <TableRow key={i.id}>
+                          <TableCell className="font-medium">{i.instance_name}</TableCell>
+                          <TableCell>{emailById(i.user_id)}</TableCell>
+                          <TableCell>
+                            {st === "loading" ? (
+                              <Badge variant="secondary"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
+                            ) : st === "connected" ? (
+                              <Badge className="bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
+                            ) : (
+                              <Badge variant="secondary"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {i.connected_number ? `+${i.connected_number}` : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{mask(i.api_token)}</TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="ghost" onClick={() => deleteInstance(i.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
