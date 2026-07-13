@@ -53,6 +53,27 @@ function AdminPage() {
   const [instToken, setInstToken] = useState("");
   const [instSaving, setInstSaving] = useState(false);
 
+  const checkStatus = useCallback(async (inst: Instance) => {
+    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
+    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+      body: { action: "status", instanceName: inst.instance_name, apiToken: inst.api_token },
+    });
+    if (error || data?.ok === false) {
+      setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
+      return;
+    }
+    const connected = extractState(data?.data) === "open";
+    setStatuses((s) => ({ ...s, [inst.id]: connected ? "connected" : "disconnected" }));
+    const number = (data?.connectedNumber as string | null) ?? null;
+    if (connected && number && number !== inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
+    } else if (!connected && inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
+    }
+  }, []);
+
   const load = useCallback(async () => {
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userData.user) return navigate({ to: "/auth", replace: true });
@@ -88,28 +109,7 @@ function AdminPage() {
     setInstances(list);
     setLoading(false);
     list.forEach(checkStatus);
-  }, [navigate]);
-
-  const checkStatus = useCallback(async (inst: Instance) => {
-    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
-    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
-      body: { action: "status", instanceName: inst.instance_name, apiToken: inst.api_token },
-    });
-    if (error || data?.ok === false) {
-      setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
-      return;
-    }
-    const connected = extractState(data?.data) === "open";
-    setStatuses((s) => ({ ...s, [inst.id]: connected ? "connected" : "disconnected" }));
-    const number = (data?.connectedNumber as string | null) ?? null;
-    if (connected && number && number !== inst.connected_number) {
-      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
-      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
-    } else if (!connected && inst.connected_number) {
-      await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
-      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
-    }
-  }, []);
+  }, [navigate, checkStatus]);
 
   useEffect(() => { load(); }, [load]);
 
