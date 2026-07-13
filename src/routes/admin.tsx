@@ -81,12 +81,35 @@ function AdminPage() {
     setAdminEmail(me.email);
     const [{ data: profs }, { data: insts }] = await Promise.all([
       supabase.from("profiles").select("id, email, name, role, created_at").order("created_at", { ascending: false }),
-      supabase.from("whatsapp_instances").select("id, user_id, instance_name, api_token"),
+      supabase.from("whatsapp_instances").select("id, user_id, instance_name, api_token, connected_number"),
     ]);
     setProfiles((profs ?? []) as Profile[]);
-    setInstances((insts ?? []) as Instance[]);
+    const list = (insts ?? []) as Instance[];
+    setInstances(list);
     setLoading(false);
+    list.forEach(checkStatus);
   }, [navigate]);
+
+  const checkStatus = useCallback(async (inst: Instance) => {
+    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
+    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+      body: { action: "status", instanceName: inst.instance_name, apiToken: inst.api_token },
+    });
+    if (error || data?.ok === false) {
+      setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
+      return;
+    }
+    const connected = extractState(data?.data) === "open";
+    setStatuses((s) => ({ ...s, [inst.id]: connected ? "connected" : "disconnected" }));
+    const number = (data?.connectedNumber as string | null) ?? null;
+    if (connected && number && number !== inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: number }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: number } : i)));
+    } else if (!connected && inst.connected_number) {
+      await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
+    }
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
