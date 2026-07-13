@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Copy, Loader2, LogOut, Plus, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Copy, Loader2, LogOut, Plus, ShieldCheck, Trash2, UserPlus, Wifi, WifiOff } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
