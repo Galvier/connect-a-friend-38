@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConnectQrDialog } from "@/components/ConnectQrDialog";
+import { extractState } from "@/lib/evolution";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -20,17 +21,6 @@ type Instance = {
   connected_number: string | null;
 };
 type InstanceStatus = "loading" | "connected" | "disconnected";
-
-function extractState(data: unknown): "open" | "close" | "unknown" {
-  if (!data || typeof data !== "object") return "unknown";
-  const d = data as Record<string, unknown>;
-  const inner = (d.data as Record<string, unknown> | undefined) ?? d;
-  if (typeof inner.LoggedIn === "boolean") return inner.LoggedIn ? "open" : "close";
-  if (typeof inner.Connected === "boolean" && inner.Connected) return "open";
-  const state = (inner.state as string) ?? (d.state as string);
-  if (state === "open" || state === "connected") return "open";
-  return "close";
-}
 
 function DashboardPage() {
   const navigate = useNavigate();
