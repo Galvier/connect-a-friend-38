@@ -1,73 +1,34 @@
-
 ## Objetivo
 
-Separar visões Admin/Cliente, permitir que o admin cadastre clientes (com senha auto-gerada e troca obrigatória no 1º login) e vincule várias instâncias WhatsApp (nome + token próprio) a cada cliente. O cliente vê apenas suas instâncias, conecta cada uma via modal de QR Code idêntico ao print da Evolution, e vê status + número conectado.
+Corrigir a exibição de status/número das instâncias no **Admin** e no **Dashboard do cliente**.
 
-## Banco de dados (migração)
+## Problemas observados
 
-- `whatsapp_instances`: adicionar colunas
-  - `api_token text not null` (token/apikey da instância na Evolution)
-  - `connected_number text` (preenchido após conexão, via status)
-  - `updated_at timestamptz` + trigger
-- `profiles`: adicionar
-  - `must_change_password boolean not null default false`
-  - `name text`
-- Manter RLS existente; adicionar policy de UPDATE em `whatsapp_instances` só para admin, e SELECT já cobre "own instances".
+1. **Admin (`/admin` → aba Instâncias)**: tabela mostra apenas Nome / Cliente / Token. Falta status de conexão e número conectado.
+2. **Dashboard cliente (`/dashboard`)**: card aparece como "Conectado" mesmo sem estar, sem botão QR, sem número. Provável causa: `extractState` em `dashboard.tsx` retorna `"close"` como fallback, mas quando a Evolution API responde com formato inesperado o código pode estar interpretando errado; além disso o número só é lido de `data?.connectedNumber` que a edge function pode não estar devolvendo.
 
-## Backend (Edge Functions)
+## Mudanças
 
-1. `evolution-proxy` (existente): passar a receber `apiToken` no body (vindo do banco por instância) e usá-lo no header `apikey`, ignorando o segredo global. Também extrair, no `status`, o número conectado (`Name`/`ownerJid`) e retorná-lo.
-2. Nova function `admin-create-user` (service role, `verify_jwt=true`):
-   - Verifica que caller é admin (`has_role`).
-   - Recebe `{ email, name }`.
-   - Gera senha aleatória (16 chars).
-   - Cria usuário via `auth.admin.createUser` (email_confirm=true).
-   - Insere/atualiza `profiles` com `role='client'`, `name`, `must_change_password=true`.
-   - Retorna a senha em texto uma única vez para o admin exibir/copiar.
+### 1. `src/routes/admin.tsx` — status + número por instância
+- Adicionar checagem de status por instância (mesmo padrão do dashboard: `supabase.functions.invoke("evolution-proxy", { action: "status", ... })`).
+- Guardar `statuses: Record<string, "loading" | "connected" | "disconnected">` e ler `connected_number` da tabela.
+- Adicionar 2 colunas na tabela de Instâncias: **Status** (badge verde "Conectado" / cinza "Desconectado" / loader) e **Número** (`+{connected_number}` ou "—").
+- Ao detectar conexão, persistir `connected_number` na tabela (igual ao dashboard).
 
-## Frontend
+### 2. `src/routes/dashboard.tsx` — corrigir status/número/QR
+- Revisar `extractState`: hoje qualquer resposta sem `state === "open"` vira "close". Garantir que apenas quando a resposta é válida marcamos "connected"; caso contrário "disconnected" — para que o botão **Conectar (QR)** apareça corretamente.
+- Exibir o `connected_number` já persistido mesmo enquanto o status ainda está "loading" (assim o número não some ao recarregar).
+- Ajustar layout do card: nome com `truncate`, badge com `shrink-0`, espaçamento consistente, altura mínima, botão sempre visível (QR ou Desconectar).
 
-### Roteamento
-- `/admin` (existente) — só admin. Redireciona clientes para `/dashboard`.
-- `/dashboard` — só cliente (admin é redirecionado para `/admin`).
-- `/change-password` — rota nova, obrigatória quando `profiles.must_change_password = true`. Guarda em ambos dashboards: se flag ativa, redireciona pra cá.
-
-### Tela Admin (`/admin`)
-Reestruturar em duas seções (Tabs: "Clientes" | "Instâncias"):
-
-- **Clientes**: tabela (nome, email, criado em, ações). Botão "Novo cliente" abre dialog (nome + email) → chama `admin-create-user` → mostra dialog com senha gerada e botão "Copiar".
-- **Instâncias**: tabela (nome instância, token mascarado, cliente vinculado, status). Botão "Nova instância" abre dialog (select de cliente, nome, token). Ações: editar token, excluir.
-
-### Tela Cliente (`/dashboard`)
-- Lista em grid de cards, um por instância atribuída ao usuário logado. Cada card mostra:
-  - Nome da instância
-  - Badge de status (Conectado / Desconectado) — obtido via `evolution-proxy status` no mount
-  - Se conectado: número (`connected_number`) + botão "Desconectar"
-  - Se desconectado: botão "Conectar" que abre o **modal QR**
-- Sem mais fluxo de "instância única" nem input manual de nome.
-
-### Modal QR (novo componente `ConnectQrDialog`)
-Design conforme imagem enviada:
-- Header com ícone QR + título "Conectar WhatsApp" + botão X
-- Subtítulo: "Escaneie o QR Code abaixo com seu WhatsApp para conectar a instância **{nome}**"
-- Card branco central com a imagem do QR (mesmo `extractQr` atual)
-- Bloco escuro com instruções numeradas 1–5 ("Abra o WhatsApp no celular", "Toque em Menu ou Configurações", "Toque em Dispositivos conectados", "Toque em Conectar um dispositivo", "Aponte seu celular para esta tela")
-- Rodapé com botões "Atualizar QR Code" (refresh) e X (fechar)
-- Polling `status` a cada 3s enquanto aberto; ao detectar `open`, fecha modal, atualiza `connected_number` no banco e mostra card conectado.
-
-### Troca de senha
-- `/change-password`: form simples (nova senha + confirmação) → `supabase.auth.updateUser({ password })` + `update profiles set must_change_password=false`. Depois navega conforme role.
+### 3. `supabase/functions/evolution-proxy/index.ts` — retornar número
+- Garantir que a action `status` extraia o número conectado (`data.instance.owner` / `data.wuid` / `data.number`, conforme retorno da Evolution) e devolva em `connectedNumber` para o front persistir.
 
 ## Detalhes técnicos
 
-- `evolution-proxy`: assinatura passa a ser `{ action, instanceName, apiToken }`. Frontend busca o token da instância no banco antes de invocar. Manter fallback para `EVOLUTION_API_KEY` só se `apiToken` ausente (compat).
-- `admin-create-user`: `verify_jwt=true` (default), autoriza via `has_role(auth.uid(),'admin')` usando o client autenticado; usa service-role client só para `auth.admin.createUser` e insert em `profiles`.
-- Senha gerada: `crypto.getRandomValues` com alfabeto seguro; retornada apenas na resposta HTTP, nunca persistida em texto.
-- Guard `must_change_password`: verificado nos loaders/hook de `/admin` e `/dashboard`; se true → `navigate('/change-password', {replace:true})`.
-- Modal QR usa `Dialog` do shadcn; instância `Vinicola-Test` no print serve como referência visual (tema escuro).
+- Reaproveitar `extractState` movendo para `src/lib/evolution.ts` (novo) e importar em admin + dashboard, evitando duplicação.
+- Nenhuma mudança de schema (colunas `connected_number` já existem em `whatsapp_instances`).
+- Sem alterações em RLS/policies.
 
-## Fora de escopo
+## Fora do escopo
 
-- Multi-tenant / workspaces
-- Reset de senha por email (fluxo separado)
-- Histórico de conexões
+- Não mexer no fluxo de autenticação, criação de clientes, ou popup de QR (`ConnectQrDialog`) além do necessário.
