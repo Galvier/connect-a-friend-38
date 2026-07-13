@@ -259,10 +259,11 @@ function AdminPage() {
                           <TableCell className="text-right">
                             <Button size="sm" variant="ghost" onClick={() => deleteInstance(i.id)}>
                               <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
