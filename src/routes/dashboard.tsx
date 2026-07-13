@@ -143,23 +143,28 @@ function DashboardPage() {
             {instances.map((inst) => {
               const status = statuses[inst.id] ?? "loading";
               return (
-                <Card key={inst.id} className="shadow-md">
-                  <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-                    <CardTitle className="text-base">{inst.instance_name}</CardTitle>
+                <Card key={inst.id} className="flex flex-col shadow-md">
+                  <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 pb-3">
+                    <CardTitle className="min-w-0 flex-1 truncate text-base" title={inst.instance_name}>
+                      {inst.instance_name}
+                    </CardTitle>
                     {status === "loading" ? (
-                      <Badge variant="secondary"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
+                      <Badge variant="secondary" className="shrink-0"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
                     ) : status === "connected" ? (
-                      <Badge className="bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
+                      <Badge className="shrink-0 bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
                     ) : (
-                      <Badge variant="secondary"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
+                      <Badge variant="secondary" className="shrink-0"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
                     )}
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {status === "connected" && inst.connected_number && (
-                      <p className="text-sm text-muted-foreground">
-                        Número: <span className="font-mono text-foreground">+{inst.connected_number}</span>
-                      </p>
-                    )}
+                  <CardContent className="flex flex-1 flex-col justify-between gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Número:{" "}
+                      {inst.connected_number ? (
+                        <span className="font-mono text-foreground">+{inst.connected_number}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </p>
                     {status === "connected" ? (
                       <Button variant="destructive" className="w-full" onClick={() => disconnect(inst)}>
                         <Power className="mr-2 h-4 w-4" /> Desconectar
