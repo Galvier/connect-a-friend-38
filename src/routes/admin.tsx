@@ -22,7 +22,8 @@ export const Route = createFileRoute("/admin")({
 });
 
 type Profile = { id: string; email: string; name: string | null; role: string; created_at: string };
-type Instance = { id: string; user_id: string; instance_name: string; api_token: string };
+type Instance = { id: string; user_id: string; instance_name: string; api_token: string; connected_number: string | null };
+type InstanceStatus = "loading" | "connected" | "disconnected";
 
 function mask(t: string) {
   if (!t) return "—";
