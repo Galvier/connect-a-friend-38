@@ -230,19 +230,35 @@ function AdminPage() {
                     <TableRow>
                       <TableHead>Nome</TableHead>
                       <TableHead>Cliente</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Número</TableHead>
                       <TableHead>Token</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {instances.map((i) => (
-                      <TableRow key={i.id}>
-                        <TableCell className="font-medium">{i.instance_name}</TableCell>
-                        <TableCell>{emailById(i.user_id)}</TableCell>
-                        <TableCell className="font-mono text-xs">{mask(i.api_token)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant="ghost" onClick={() => deleteInstance(i.id)}>
-                            <Trash2 className="h-4 w-4" />
+                    {instances.map((i) => {
+                      const st = statuses[i.id] ?? "loading";
+                      return (
+                        <TableRow key={i.id}>
+                          <TableCell className="font-medium">{i.instance_name}</TableCell>
+                          <TableCell>{emailById(i.user_id)}</TableCell>
+                          <TableCell>
+                            {st === "loading" ? (
+                              <Badge variant="secondary"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
+                            ) : st === "connected" ? (
+                              <Badge className="bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
+                            ) : (
+                              <Badge variant="secondary"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {i.connected_number ? `+${i.connected_number}` : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{mask(i.api_token)}</TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="ghost" onClick={() => deleteInstance(i.id)}>
+                              <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
