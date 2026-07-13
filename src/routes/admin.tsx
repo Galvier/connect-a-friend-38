@@ -37,6 +37,7 @@ function AdminPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statuses, setStatuses] = useState<Record<string, InstanceStatus>>({});
 
   // client dialog
   const [clientOpen, setClientOpen] = useState(false);
