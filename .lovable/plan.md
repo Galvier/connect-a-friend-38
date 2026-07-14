@@ -1,34 +1,46 @@
+
 ## Objetivo
 
-Corrigir a exibição de status/número das instâncias no **Admin** e no **Dashboard do cliente**.
+1. Corrigir a falha na geração de QR Code atualizando os endpoints da `evolution-proxy` para o novo padrão da API (identificação da instância via header `apikey`).
+2. Refinar o layout do card de instância no `/dashboard` — mais respiro, hierarquia clara, ícone destacado e número em destaque.
 
-## Problemas observados
+## 1. `supabase/functions/evolution-proxy/index.ts`
 
-1. **Admin (`/admin` → aba Instâncias)**: tabela mostra apenas Nome / Cliente / Token. Falta status de conexão e número conectado.
-2. **Dashboard cliente (`/dashboard`)**: card aparece como "Conectado" mesmo sem estar, sem botão QR, sem número. Provável causa: `extractState` em `dashboard.tsx` retorna `"close"` como fallback, mas quando a Evolution API responde com formato inesperado o código pode estar interpretando errado; além disso o número só é lido de `data?.connectedNumber` que a edge function pode não estar devolvendo.
+Substituir os endpoints pelo padrão do print (sem `{instanceId}` no path — a instância é resolvida pelo header `apikey` do token da instância):
 
-## Mudanças
+| Action    | Antes                                          | Depois                                     |
+| --------- | ---------------------------------------------- | ------------------------------------------ |
+| `status`  | `GET /instance/connectionState/{name}`         | `GET /instance/status`                     |
+| `qr`      | `GET /instance/connect/{name}`                 | `GET /instance/qr`                         |
+| `logout`  | `DELETE /instance/logout/{name}`               | `DELETE /instance/logout`                  |
 
-### 1. `src/routes/admin.tsx` — status + número por instância
-- Adicionar checagem de status por instância (mesmo padrão do dashboard: `supabase.functions.invoke("evolution-proxy", { action: "status", ... })`).
-- Guardar `statuses: Record<string, "loading" | "connected" | "disconnected">` e ler `connected_number` da tabela.
-- Adicionar 2 colunas na tabela de Instâncias: **Status** (badge verde "Conectado" / cinza "Desconectado" / loader) e **Número** (`+{connected_number}` ou "—").
-- Ao detectar conexão, persistir `connected_number` na tabela (igual ao dashboard).
+Adicionar também:
+- `disconnect` → `POST /instance/disconnect` (para o botão "Desconectar" — logout encerra a sessão, disconnect apenas desconecta).
+- Fallback de número: se `GET /instance/status` não trouxer o `owner/number`, chamar `GET /instance/info` (também sem path param) para extrair.
 
-### 2. `src/routes/dashboard.tsx` — corrigir status/número/QR
-- Revisar `extractState`: hoje qualquer resposta sem `state === "open"` vira "close". Garantir que apenas quando a resposta é válida marcamos "connected"; caso contrário "disconnected" — para que o botão **Conectar (QR)** apareça corretamente.
-- Exibir o `connected_number` já persistido mesmo enquanto o status ainda está "loading" (assim o número não some ao recarregar).
-- Ajustar layout do card: nome com `truncate`, badge com `shrink-0`, espaçamento consistente, altura mínima, botão sempre visível (QR ou Desconectar).
+Manter a lógica de `connectedNumber` / `state` normalizados no retorno.
 
-### 3. `supabase/functions/evolution-proxy/index.ts` — retornar número
-- Garantir que a action `status` extraia o número conectado (`data.instance.owner` / `data.wuid` / `data.number`, conforme retorno da Evolution) e devolva em `connectedNumber` para o front persistir.
+### Ajuste em `extractQr` (client)
+Como agora o QR vem de `/instance/qr` (endpoint dedicado), a resposta tende a ser mais direta (`{ qrcode: "data:image/png;base64,..." }` ou `{ base64: "..." }`). O `extractQr` atual do `ConnectQrDialog` já cobre múltiplos formatos, mas vou reforçar a busca por chaves comuns (`qrcode`, `base64`, `code`, `qr`).
 
-## Detalhes técnicos
+## 2. `src/routes/dashboard.tsx` — card refinado
 
-- Reaproveitar `extractState` movendo para `src/lib/evolution.ts` (novo) e importar em admin + dashboard, evitando duplicação.
-- Nenhuma mudança de schema (colunas `connected_number` já existem em `whatsapp_instances`).
-- Sem alterações em RLS/policies.
+Manter estrutura em card (grid responsivo), refinando:
+
+- **Header**: ícone circular do WhatsApp (verde suave) à esquerda, nome da instância com `truncate` e um subtítulo pequeno ("Instância WhatsApp"). Status como pill compacto no canto superior direito, com ponto colorido animado (verde pulsando quando conectado, cinza quando não).
+- **Corpo**: bloco destacado para o número — label pequeno "Número conectado" + número em fonte maior (`text-lg font-semibold font-mono`) formatado como `+55 11 99999-9999`. Quando não conectado, mostrar em estado vazio elegante ("Aguardando conexão").
+- **Rodapé**: botão full-width com altura maior e ícone. Quando conectado, botão outline destrutivo ("Desconectar"). Quando desconectado, botão primary sólido ("Conectar WhatsApp").
+- **Espaçamento**: `p-5`, `gap-4`, `min-h-[220px]` para uniformidade.
+
+Helper de formatação de número BR (`formatPhone`) inline no arquivo.
+
+Nenhuma alteração em lógica de auth, criação, ou schema.
+
+## 3. `src/routes/admin.tsx`
+
+Só um ajuste: trocar o mesmo call de status pelo novo endpoint (via `evolution-proxy`, já herdado automaticamente da mudança acima — sem alterar código do admin).
 
 ## Fora do escopo
 
-- Não mexer no fluxo de autenticação, criação de clientes, ou popup de QR (`ConnectQrDialog`) além do necessário.
+- Fluxo de criação de instância, autenticação, popup de QR (só ajuste mínimo do `extractQr`).
+- Schema/RLS/policies.

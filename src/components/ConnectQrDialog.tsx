@@ -24,23 +24,26 @@ function toQrDataUrl(value: string): string | null {
   if (isLikelyBase64(s)) return `data:image/png;base64,${s}`;
   return null;
 }
+const QR_KEYS = ["qrcode", "qrCode", "base64", "qr", "code", "image"];
 function extractQr(payload: unknown): string | null {
-  const outer = (payload as { data?: unknown })?.data;
-  const real = (outer as { data?: unknown })?.data !== undefined
-    ? (outer as { data: unknown }).data : outer;
-  if (typeof real === "string") return toQrDataUrl(real);
-  if (real && typeof real === "object") {
-    for (const v of Object.values(real as Record<string, unknown>)) {
-      if (typeof v === "string") {
-        const f = toQrDataUrl(v);
-        if (f) return f;
-      }
+  if (!payload) return null;
+  if (typeof payload === "string") return toQrDataUrl(payload);
+  if (typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  for (const k of QR_KEYS) {
+    const v = obj[k];
+    if (typeof v === "string") {
+      const f = toQrDataUrl(v);
+      if (f) return f;
     }
-    for (const v of Object.values(real as Record<string, unknown>)) {
-      if (v && typeof v === "object") {
-        const nested = extractQr({ data: { data: v } });
-        if (nested) return nested;
-      }
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") {
+      const nested = extractQr(v);
+      if (nested) return nested;
+    } else if (typeof v === "string") {
+      const f = toQrDataUrl(v);
+      if (f) return f;
     }
   }
   return null;
