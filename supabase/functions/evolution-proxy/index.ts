@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
         method = "DELETE";
         break;
       case "debug": {
-        const paths = ["/session/status", "/session/qr", "/user/info", "/user/me", "/instance/owner", "/instance/number", "/instance/phone", "/instance/user", "/instance/profile", "/webhook/find", "/chat/whoami"];
+        const paths = ["/instance/user/info", "/instance/user/me", "/instance/user", "/instance/me", "/instance/webhook", "/instance/contacts", "/instance/chats", "/instance/presence", "/instance/profilePicture", "/instance/pairphone", "/instance/whoami", "/instance/session"];
         const results: Record<string, unknown> = {};
         for (const p of paths) {
           try {
