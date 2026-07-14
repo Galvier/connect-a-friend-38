@@ -1,5 +1,6 @@
 // Evolution API proxy - keeps API key secret on the server
-// Actions: 'status' | 'qr' | 'logout'
+// Actions: 'status' | 'qr' | 'logout' | 'disconnect'
+// New endpoints: instance is resolved via the `apikey` header (per-instance token).
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -18,6 +19,50 @@ const normalizeBaseUrl = (rawUrl: string) => {
   return new URL(candidate).origin;
 };
 
+type Dict = Record<string, unknown>;
+
+const extractNumberFromPayload = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const stack: Dict[] = [payload as Dict];
+  const keys = ["owner", "ownerJid", "wuid", "number", "phone", "phoneNumber", "jid"];
+  const seen = new Set<Dict>();
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const k of keys) {
+      const v = cur[k];
+      if (typeof v === "string" && v) {
+        const digits = v.split("@")[0].replace(/\D/g, "");
+        if (digits.length >= 8) return digits;
+      }
+    }
+    for (const v of Object.values(cur)) {
+      if (v && typeof v === "object") stack.push(v as Dict);
+    }
+  }
+  return null;
+};
+
+const extractState = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const d = payload as Dict;
+  const inner = (d.data as Dict | undefined) ?? d;
+  const instance = (inner.instance as Dict | undefined) ?? inner;
+  const raw =
+    (instance.state as string | undefined) ??
+    (inner.state as string | undefined) ??
+    (d.state as string | undefined) ??
+    (instance.status as string | undefined) ??
+    (inner.status as string | undefined) ??
+    null;
+  if (raw) return raw;
+  if (typeof instance.LoggedIn === "boolean") return instance.LoggedIn ? "open" : "close";
+  if (typeof inner.LoggedIn === "boolean") return inner.LoggedIn ? "open" : "close";
+  if (typeof instance.Connected === "boolean") return instance.Connected ? "open" : "close";
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
@@ -31,8 +76,8 @@ Deno.serve(async (req) => {
     }
 
     const { action, instanceName, apiToken } = await req.json();
-    if (!action || !instanceName) {
-      return new Response(JSON.stringify({ error: "action e instanceName obrigatórios" }), {
+    if (!action) {
+      return new Response(JSON.stringify({ error: "action obrigatório" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -47,19 +92,27 @@ Deno.serve(async (req) => {
     }
 
     const base = normalizeBaseUrl(EVOLUTION_API_URL);
-    const headers = { "Content-Type": "application/json", apikey: token };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      apikey: token,
+    };
+    if (instanceName) headers["instance"] = instanceName;
 
     let url = "";
     let method: "GET" | "POST" | "DELETE" = "GET";
     switch (action) {
       case "status":
-        url = `${base}/instance/connectionState/${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/status`;
         break;
       case "qr":
-        url = `${base}/instance/connect/${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/qr`;
+        break;
+      case "disconnect":
+        url = `${base}/instance/disconnect`;
+        method = "POST";
         break;
       case "logout":
-        url = `${base}/instance/logout/${encodeURIComponent(instanceName)}`;
+        url = `${base}/instance/logout`;
         method = "DELETE";
         break;
       default:
@@ -74,55 +127,24 @@ Deno.serve(async (req) => {
     let data: unknown;
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
 
-    // Try to extract phone number + normalized state for status
     let connectedNumber: string | null = null;
     let state: string | null = null;
-    if (action === "status" && data && typeof data === "object") {
-      const d = data as Record<string, unknown>;
-      const inner = (d.data as Record<string, unknown> | undefined) ?? d;
-      const instance = (inner.instance as Record<string, unknown> | undefined) ?? inner;
-      state =
-        (instance.state as string | undefined) ??
-        (inner.state as string | undefined) ??
-        (d.state as string | undefined) ??
-        null;
-
-      const candidates = [
-        instance.owner, instance.ownerJid, instance.wuid, instance.number,
-        inner.owner, inner.ownerJid, inner.wuid, inner.number,
-        instance.Name, inner.Name, instance.name, inner.name,
-      ];
-      for (const c of candidates) {
-        if (typeof c === "string" && c) {
-          const digits = c.split("@")[0].replace(/\D/g, "");
-          if (digits.length >= 8) { connectedNumber = digits; break; }
-        }
-      }
-
+    if (action === "status") {
+      state = extractState(data);
+      connectedNumber = extractNumberFromPayload(data);
       if (!connectedNumber && (state === "open" || state === "connected")) {
         try {
-          const r = await fetch(
-            `${base}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`,
-            { headers },
-          );
+          const r = await fetch(`${base}/instance/info`, { headers });
           const j = await r.json();
-          const list = Array.isArray(j) ? j : (Array.isArray(j?.data) ? j.data : []);
-          for (const entry of list) {
-            const inst = entry?.instance ?? entry;
-            const owner = inst?.owner ?? inst?.ownerJid ?? inst?.wuid ?? inst?.number;
-            if (typeof owner === "string") {
-              const digits = owner.split("@")[0].replace(/\D/g, "");
-              if (digits.length >= 8) { connectedNumber = digits; break; }
-            }
-          }
+          connectedNumber = extractNumberFromPayload(j);
         } catch (_) { /* ignore */ }
       }
     }
 
-    return new Response(JSON.stringify({ ok: resp.ok, status: resp.status, data, connectedNumber, state }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: resp.ok, status: resp.status, data, connectedNumber, state }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("evolution-proxy error", err);
     return new Response(JSON.stringify({ error: (err as Error).message }), {
