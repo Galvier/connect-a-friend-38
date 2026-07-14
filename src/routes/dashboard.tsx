@@ -139,39 +139,87 @@ function DashboardPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {instances.map((inst) => {
               const status = statuses[inst.id] ?? "loading";
+              const connected = status === "connected";
+              const loading = status === "loading";
               return (
-                <Card key={inst.id} className="flex flex-col shadow-md">
-                  <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 pb-3">
-                    <CardTitle className="min-w-0 flex-1 truncate text-base" title={inst.instance_name}>
-                      {inst.instance_name}
-                    </CardTitle>
-                    {status === "loading" ? (
-                      <Badge variant="secondary" className="shrink-0"><Loader2 className="mr-1 h-3 w-3 animate-spin" />...</Badge>
-                    ) : status === "connected" ? (
-                      <Badge className="shrink-0 bg-green-600 hover:bg-green-600"><Wifi className="mr-1 h-3 w-3" />Conectado</Badge>
-                    ) : (
-                      <Badge variant="secondary" className="shrink-0"><WifiOff className="mr-1 h-3 w-3" />Desconectado</Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent className="flex flex-1 flex-col justify-between gap-4">
-                    <p className="text-sm text-muted-foreground">
-                      Número:{" "}
-                      {inst.connected_number ? (
-                        <span className="font-mono text-foreground">+{inst.connected_number}</span>
+                <Card
+                  key={inst.id}
+                  className="flex min-h-[260px] flex-col overflow-hidden border-border/60 bg-card shadow-sm transition hover:shadow-md"
+                >
+                  <CardHeader className="flex-row items-start gap-3 space-y-0 p-5 pb-4">
+                    <div
+                      className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+                        connected ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      <Smartphone className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="truncate text-base leading-tight" title={inst.instance_name}>
+                        {inst.instance_name}
+                      </CardTitle>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Instância WhatsApp</p>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        loading
+                          ? "bg-muted text-muted-foreground"
+                          : connected
+                            ? "bg-green-500/10 text-green-700 dark:text-green-400"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" /> ...
+                        </>
+                      ) : connected ? (
+                        <>
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                          </span>
+                          Conectado
+                        </>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <>
+                          <WifiOff className="h-3 w-3" /> Desconectado
+                        </>
                       )}
-                    </p>
-                    {status === "connected" ? (
-                      <Button variant="destructive" className="w-full" onClick={() => disconnect(inst)}>
+                    </span>
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col justify-between gap-5 p-5 pt-0">
+                    <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Número conectado
+                      </p>
+                      {inst.connected_number ? (
+                        <p className="mt-1 font-mono text-lg font-semibold text-foreground">
+                          {formatPhone(inst.connected_number)}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm text-muted-foreground">Aguardando conexão</p>
+                      )}
+                    </div>
+                    {connected ? (
+                      <Button
+                        variant="outline"
+                        className="h-11 w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => disconnect(inst)}
+                      >
                         <Power className="mr-2 h-4 w-4" /> Desconectar
                       </Button>
                     ) : (
-                      <Button className="w-full" onClick={() => setQrFor(inst)} disabled={status === "loading"}>
-                        <QrCode className="mr-2 h-4 w-4" /> Conectar
+                      <Button
+                        className="h-11 w-full"
+                        onClick={() => setQrFor(inst)}
+                        disabled={loading}
+                      >
+                        <QrCode className="mr-2 h-4 w-4" />
+                        {loading ? "Verificando..." : "Conectar WhatsApp"}
                       </Button>
                     )}
                   </CardContent>
