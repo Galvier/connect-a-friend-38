@@ -115,19 +115,11 @@ Deno.serve(async (req) => {
         url = `${base}/instance/logout`;
         method = "DELETE";
         break;
-      case "debug": {
-        const paths = ["/", "/docs", "/swagger", "/api-docs", "/openapi.json", "/swagger.json", "/routes"];
-        const results: Record<string, unknown> = {};
-        for (const p of paths) {
-          try {
-            const r = await fetch(`${base}${p}`, { headers });
-            const t = await r.text();
-            results[p] = { status: r.status, body: t.slice(0, 500) };
-          } catch (e) { results[p] = { error: (e as Error).message }; }
-        }
-        return new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
       default:
+        return new Response(JSON.stringify({ error: "Ação inválida" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
         return new Response(JSON.stringify({ error: "Ação inválida" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
