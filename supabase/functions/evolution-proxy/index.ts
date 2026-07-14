@@ -120,6 +120,10 @@ Deno.serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+        return new Response(JSON.stringify({ error: "Ação inválida" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
     }
 
     const resp = await fetch(url, { method, headers });
