@@ -85,14 +85,20 @@ function DashboardPage() {
   useEffect(() => { load(); }, [load]);
 
   const disconnect = async (inst: Instance) => {
+    setStatuses((s) => ({ ...s, [inst.id]: "loading" }));
     const { error } = await supabase.functions.invoke("evolution-proxy", {
       body: { action: "logout", instanceName: inst.instance_name, apiToken: inst.api_token },
     });
-    if (error) return toast.error("Erro ao desconectar");
+    if (error) {
+      toast.error("Erro ao desconectar");
+      checkStatus(inst);
+      return;
+    }
     await supabase.from("whatsapp_instances").update({ connected_number: null }).eq("id", inst.id);
     setInstances((prev) => prev.map((i) => (i.id === inst.id ? { ...i, connected_number: null } : i)));
+    setStatuses((s) => ({ ...s, [inst.id]: "disconnected" }));
     toast.success("Dispositivo desconectado");
-    checkStatus(inst);
+    setTimeout(() => checkStatus(inst), 1500);
   };
 
   const onConnected = (inst: Instance) => async (number: string | null) => {
