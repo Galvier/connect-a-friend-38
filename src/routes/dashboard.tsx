@@ -22,6 +22,14 @@ type Instance = {
 };
 type InstanceStatus = "loading" | "connected" | "disconnected";
 
+function formatPhone(digits: string): string {
+  const d = digits.replace(/\D/g, "");
+  if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
+  if (d.length === 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
+  if (d.length === 11) return `+55 (${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  return `+${d}`;
+}
+
 function DashboardPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
