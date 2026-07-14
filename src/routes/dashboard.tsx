@@ -212,24 +212,36 @@ function DashboardPage() {
                         <p className="mt-1 text-sm text-muted-foreground">Aguardando conexão</p>
                       )}
                     </div>
-                    {connected ? (
+                    <div className="flex gap-2">
+                      {connected ? (
+                        <Button
+                          variant="outline"
+                          className="h-11 flex-1 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => disconnect(inst)}
+                        >
+                          <Power className="mr-2 h-4 w-4" /> Desconectar
+                        </Button>
+                      ) : (
+                        <Button
+                          className="h-11 flex-1"
+                          onClick={() => setQrFor(inst)}
+                          disabled={loading}
+                        >
+                          <QrCode className="mr-2 h-4 w-4" />
+                          {loading ? "Verificando..." : "Conectar WhatsApp"}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
-                        className="h-11 w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => disconnect(inst)}
-                      >
-                        <Power className="mr-2 h-4 w-4" /> Desconectar
-                      </Button>
-                    ) : (
-                      <Button
-                        className="h-11 w-full"
-                        onClick={() => setQrFor(inst)}
+                        size="icon"
+                        className="h-11 w-11 shrink-0"
+                        onClick={() => checkStatus(inst)}
                         disabled={loading}
+                        title="Atualizar status"
                       >
-                        <QrCode className="mr-2 h-4 w-4" />
-                        {loading ? "Verificando..." : "Conectar WhatsApp"}
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                       </Button>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
               );
